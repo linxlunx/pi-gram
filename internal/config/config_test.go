@@ -19,7 +19,7 @@ func TestLoadAndValidate(t *testing.T) {
 		"TELEGRAM_WEBHOOK_SECRET":   "sekrit",
 		"TELEGRAM_WEBHOOK_URL":      "https://bot.example.com/telegram/webhook",
 		"TELEGRAM_ALLOWED_USER_IDS": "111, 222,9999999999",
-		"PI_MODEL":                  "opencode/gpt-x",
+		"PI_MODEL":                  "prov/model-x",
 		"PI_BINARY":                 "/usr/local/bin/pi",
 		"PI_SESSION_DIRECTORY":      t.TempDir(),
 	})
@@ -55,6 +55,7 @@ func TestValidateMissing(t *testing.T) {
 		"TELEGRAM_BOT_TOKEN":      "",
 		"TELEGRAM_WEBHOOK_SECRET": "",
 		"TELEGRAM_WEBHOOK_URL":    "",
+		"PI_PROVIDER":             "",
 		"PI_MODEL":                "",
 	})
 	// Clear any leftover allowed IDs from the environment.
@@ -63,7 +64,8 @@ func TestValidateMissing(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
-	for _, key := range []string{"TELEGRAM_BOT_TOKEN", "TELEGRAM_WEBHOOK_SECRET", "TELEGRAM_WEBHOOK_URL", "TELEGRAM_ALLOWED_USER_IDS", "PI_MODEL"} {
+	// Provider and model are optional; only Telegram values are required.
+	for _, key := range []string{"TELEGRAM_BOT_TOKEN", "TELEGRAM_WEBHOOK_SECRET", "TELEGRAM_WEBHOOK_URL", "TELEGRAM_ALLOWED_USER_IDS"} {
 		if !contains(err.Error(), key) {
 			t.Errorf("error should mention %s: %v", key, err)
 		}
@@ -71,45 +73,39 @@ func TestValidateMissing(t *testing.T) {
 }
 
 func TestPIArgs(t *testing.T) {
-	setenv(t, map[string]string{
-		"PI_PROVIDER":               "opencode",
-		"PI_MODEL":                  "opencode/gpt-x",
-		"PI_SESSION_DIRECTORY":      "/var/lib/pi/sessions",
-		"TELEGRAM_BOT_TOKEN":        "x",
-		"TELEGRAM_WEBHOOK_SECRET":   "x",
-		"TELEGRAM_WEBHOOK_URL":      "https://h/p",
-		"TELEGRAM_ALLOWED_USER_IDS": "1",
-	})
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("load: %v", err)
+	cases := []struct {
+		name string
+		cfg  Config
+		want []string
+	}{
+		{
+			name: "provider and model set",
+			cfg:  Config{PIProvider: "prov", PIModel: "prov/model-x", PISessionDirectory: "/var/lib/pi/sessions"},
+			want: []string{"--mode", "rpc", "--provider", "prov", "--model", "prov/model-x", "--session-dir", "/var/lib/pi/sessions"},
+		},
+		{
+			name: "provider only",
+			cfg:  Config{PIProvider: "prov", PISessionDirectory: "/var/lib/pi/sessions"},
+			want: []string{"--mode", "rpc", "--provider", "prov", "--session-dir", "/var/lib/pi/sessions"},
+		},
+		{
+			name: "neither set, pi defaults apply",
+			cfg:  Config{PISessionDirectory: "/var/lib/pi/sessions"},
+			want: []string{"--mode", "rpc", "--session-dir", "/var/lib/pi/sessions"},
+		},
 	}
-	got := cfg.PIArgs()
-	want := []string{"--mode", "rpc", "--provider", "opencode", "--model", "opencode/gpt-x", "--session-dir", "/var/lib/pi/sessions"}
-	if len(got) != len(want) {
-		t.Fatalf("args = %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("args = %v, want %v", got, want)
-		}
-	}
-}
-
-func TestChildEnvInjectsAPIKey(t *testing.T) {
-	setenv(t, map[string]string{
-		"OPENCODE_API_KEY": "sk-secret",
-	})
-	cfg := &Config{OpenCodeAPIKey: "sk-secret"}
-	env := cfg.ChildEnv()
-	found := false
-	for _, kv := range env {
-		if kv == "OPENCODE_API_KEY=sk-secret" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatal("API key not injected into child env")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.cfg.PIArgs()
+			if len(got) != len(tc.want) {
+				t.Fatalf("args = %v, want %v", got, tc.want)
+			}
+			for i := range tc.want {
+				if got[i] != tc.want[i] {
+					t.Fatalf("args = %v, want %v", got, tc.want)
+				}
+			}
+		})
 	}
 }
 

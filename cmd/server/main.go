@@ -128,10 +128,14 @@ func run(b *bot.Bot, cfg *config.Config, logger *slog.Logger) error {
 		}
 	}
 
+	// The Pi child inherits the gateway's full environment unchanged
+	// (provider credentials and anything else delivered via the env
+	// file or shell flow straight through to Pi).
+
 	manager := pi.NewManager(pi.ManagerOptions{
 		Binary:  cfg.PIBinary,
 		Args:    cfg.PIArgs(),
-		Env:     cfg.ChildEnv(),
+		Env:     os.Environ(),
 		Dir:     cfg.PIWorkingDirectory,
 		Logger:  logger,
 		OnStart: onStart,

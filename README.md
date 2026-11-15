@@ -6,6 +6,11 @@ running on your server: Telegram messages arrive via webhook, are
 forwarded to a persistent Pi RPC subprocess, and the agent's final
 answer is delivered back to the chat.
 
+The gateway is provider-agnostic: Pi is started with whatever
+`--provider`/`--model` you configure (or Pi's own defaults if unset),
+and provider credentials travel through the environment untouched —
+the gateway never reads them.
+
 ```
 Telegram User
     |
@@ -22,7 +27,7 @@ Pi Telegram Gateway (this program, Go)
 Pi RPC Process (persistent child)
     |
     v
-OpenCode Zen
+AI Provider (whatever Pi is configured with)
 ```
 
 ## Features
@@ -43,6 +48,10 @@ OpenCode Zen
   the [RPC documentation](https://pi.dev/docs/latest/rpc). A prompt
   response only means *accepted*; the gateway waits for
   `agent_settled` before sending the final assistant message.
+- **Provider-agnostic** — Pi runs with the `--provider`/`--model` you
+  configure (or its own defaults when unset); provider credentials and
+  any other environment variables flow from the env file through the
+  gateway into Pi's child environment, unchanged.
 - **Session management** — Telegram chats are mapped to Pi session
   files (persisted in a small JSON state file). Sessions survive
   gateway and Pi restarts; `/new` starts fresh ones.
@@ -79,7 +88,8 @@ my-pi-gram/
 - Linux server (tested with systemd + Nginx)
 - `pi` (the Pi coding agent) installed on the **server**, with RPC mode
   available (`pi --help` mentions `--mode rpc`)
-- An OpenCode Zen API key
+- An API key for your Pi provider, if it uses one (delivered through
+  the environment)
 - A Telegram bot token from [@BotFather](https://t.me/BotFather)
 - TLS certificate for the public hostname (e.g. via certbot)
 
@@ -130,24 +140,22 @@ Required values:
 | `TELEGRAM_WEBHOOK_SECRET` | `openssl rand -hex 32` |
 | `TELEGRAM_WEBHOOK_URL` | e.g. `https://bot.example.com/telegram/webhook` |
 | `TELEGRAM_ALLOWED_USER_IDS` | your numeric Telegram user ID (comma-separated for more) |
-| `PI_MODEL` | e.g. `opencode/<model>` |
-| `OPENCODE_API_KEY` | OpenCode Zen key, passed to Pi via child environment |
 
 Find your numeric user ID by messaging [@userinfobot](https://t.me/userinfobot).
+
+**Pi settings are passthrough, not gateway configuration.**
+`PI_PROVIDER`, `PI_MODEL`, provider API keys and anything else in the
+env file flow straight through to the Pi child process unchanged — the
+gateway never reads provider credentials. When `PI_PROVIDER`/`PI_MODEL`
+are unset, the corresponding `--provider`/`--model` flags are omitted
+and Pi uses its own defaults. To give Pi additional variables later
+(proxy settings, other credentials), just add them to the env file —
+no code or configuration changes.
 
 Optional variables and defaults are documented in `.env.example`
 (timeouts, listen address, log level, state file).
 
-### 4. Nginx
-
-```bash
-sudo cp configs/nginx.conf /etc/nginx/sites-available/pi-telegram
-sudo ln -s /etc/nginx/sites-available/pi-telegram /etc/nginx/sites-enabled/
-# edit server_name and certificate paths
-sudo nginx -t && sudo systemctl reload nginx
-```
-
-### 5. Register the Telegram webhook
+### 4. Register the Telegram webhook
 
 The gateway must reach `api.telegram.org` once to register. Load the
 environment file with `-env-file` (values not already in the
@@ -186,7 +194,7 @@ tells Telegram to echo it back in every webhook request's
 validates. Registration and validation read the same env file, so they
 cannot mismatch.
 
-### 6. Start the service
+### 5. Start the service
 
 ```bash
 sudo systemctl daemon-reload
@@ -197,8 +205,8 @@ journalctl -u pi-telegram -f
 ### Running in the foreground
 
 For debugging you can run the gateway outside systemd. Load the
-environment file with `-env-file`, otherwise required variables such as
-`OPENCODE_API_KEY` will be missing:
+environment file with `-env-file`, otherwise required variables and
+provider credentials will be missing:
 
 ```bash
 sudo -u pi /home/pi/pi-telegram/pi-telegram \
@@ -281,11 +289,11 @@ Set `LOG_LEVEL=debug` to also see Pi's stderr diagnostics.
 ### Verifying the Pi RPC protocol on your install
 
 ```bash
-sudo -u pi pi --mode rpc --no-session --provider opencode \
-  --model opencode/YOUR_MODEL_ID --session-dir /var/lib/pi/sessions
+sudo -u pi pi --mode rpc --no-session --session-dir /var/lib/pi/sessions
 ```
 
-Type a command and confirm the response shape matches:
+(Add `--provider`/`--model` if you use them.) Type a command and
+confirm the response shape matches:
 
 ```json
 {"id":"t1","type":"get_state"}
@@ -297,14 +305,16 @@ Type a command and confirm the response shape matches:
 - **Webhook flow**: Nginx → `POST /telegram/webhook` → method + secret
   validation → parse update → drop duplicates → `200 OK` → handle
   asynchronously.
-- **Pi lifecycle**: the process manager spawns Pi with pipes, reads
-  stdout continuously (JSON records via a strict JSON decoder — no
-  generic line reader), writes commands under a mutex (single writer),
-  streams Pi's stderr at debug level and replays its tail at error
-  level when a process dies within 30 seconds of starting (so startup
-  failures are visible at the default log level), and restarts Pi with
-  exponential backoff (capped, reset after a stable run). On shutdown
-  it closes stdin, waits briefly, then kills the process group.
+- **Pi lifecycle**: the process manager spawns Pi with pipes (Pi
+  inherits the gateway's full environment unchanged — provider
+  credentials and all), reads stdout continuously (JSON records via a
+  strict JSON decoder — no generic line reader), writes commands under
+  a mutex (single writer), streams Pi's stderr at debug level and
+  replays its tail at error level when a process dies within 30
+  seconds of starting (so startup failures are visible at the default
+  log level), and restarts Pi with exponential backoff (capped, reset
+  after a stable run). On shutdown it closes stdin, waits briefly,
+  then kills the process group.
 - **Prompt lifecycle**: subscribe to events *before* sending (so fast
   completions are not missed) → send `prompt` → check
   `data.disposition` (`started`/`queued` → wait; `handled` → done, no
@@ -327,8 +337,10 @@ Please read this section carefully.
   unit enforces this). Never as root.
 - Pi RPC is **not** exposed on any network interface — it only exists
   as pipes to a child process. The gateway listens on loopback only.
-- The Telegram bot token, webhook secret and OpenCode Zen key live in
-  a `chmod 600` environment file and are never logged.
+- The Telegram bot token, webhook secret and provider API keys live in
+  a `chmod 600` environment file and are never logged. The gateway
+  does not even read provider credentials — they pass through to Pi's
+  child environment unchanged.
 - Only allowlisted user IDs reach Pi; the webhook validates the secret
   token on every request.
 - `/bash` refuses destructive command families, but **filters are not
@@ -348,8 +360,8 @@ Please read this section carefully.
 | Bot does not respond | `journalctl -u pi-telegram -e`; is the webhook registered? `curl "https://api.telegram.org/bot$TOKEN/getWebhookInfo"` |
 | `getWebhookInfo` shows errors | Nginx reachable? Certificate valid? Secret matches? |
 | `/status` says process not running | `PI_BINARY` correct? `sudo -u pi $PI_BINARY --version`; watch restart logs |
-| Pi crash-loops (`restarting pi process` repeats) | Look for `pi process exited quickly` in the log — it includes Pi's last stderr lines, which usually contain the reason. Common causes: missing/invalid `OPENCODE_API_KEY` in the *gateway's* environment, invalid `PI_MODEL`, unwritable `PI_SESSION_DIRECTORY`, or flags not supported by the installed pi version (`pi --help` is authoritative). Reproduce manually (see below). |
-| Prompts time out | Raise `PI_PROMPT_TIMEOUT_SECONDS`; check `OPENCODE_API_KEY` works: run Pi interactively once |
+| Pi crash-loops (`restarting pi process` repeats) | Look for `pi process exited quickly` in the log — it includes Pi's last stderr lines, which usually contain the reason. Common causes: missing/invalid provider API key in the environment, invalid `PI_MODEL`, unwritable `PI_SESSION_DIRECTORY`, or flags not supported by the installed pi version (`pi --help` is authoritative). Reproduce manually (see below). |
+| Prompts time out | Raise `PI_PROMPT_TIMEOUT_SECONDS`; check the provider credentials work: run Pi interactively once |
 | Lost context after restart | Check `STATE_FILE` exists and is writable by `pi`; the last session is restored at startup |
 | 403 from the webhook | `TELEGRAM_WEBHOOK_SECRET` differs between the env file and the registration |
 

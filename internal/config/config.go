@@ -24,7 +24,6 @@ type Config struct {
 	PIModel            string
 	PIWorkingDirectory string
 	PISessionDirectory string
-	OpenCodeAPIKey     string
 
 	// HTTP server settings.
 	HTTPListenAddress string
@@ -46,11 +45,10 @@ func Load() (*Config, error) {
 		TelegramAllowedUserIDs: parseUserIDs(os.Getenv("TELEGRAM_ALLOWED_USER_IDS")),
 
 		PIBinary:           getenv("PI_BINARY", "pi"),
-		PIProvider:         getenv("PI_PROVIDER", "opencode"),
+		PIProvider:         os.Getenv("PI_PROVIDER"),
 		PIModel:            os.Getenv("PI_MODEL"),
 		PIWorkingDirectory: os.Getenv("PI_WORKING_DIRECTORY"),
 		PISessionDirectory: getenv("PI_SESSION_DIRECTORY", "/var/lib/pi/sessions"),
-		OpenCodeAPIKey:     os.Getenv("OPENCODE_API_KEY"),
 
 		HTTPListenAddress: getenv("HTTP_LISTEN_ADDRESS", "127.0.0.1:8080"),
 		LogLevel:          getenv("LOG_LEVEL", "info"),
@@ -71,6 +69,8 @@ func Load() (*Config, error) {
 }
 
 // Validate checks that required configuration values are present.
+// Provider and model are deliberately not validated: they are passed
+// through to Pi, which is authoritative for its own defaults.
 func (c *Config) Validate() error {
 	var missing []string
 	if c.TelegramBotToken == "" {
@@ -84,9 +84,6 @@ func (c *Config) Validate() error {
 	}
 	if len(c.TelegramAllowedUserIDs) == 0 {
 		missing = append(missing, "TELEGRAM_ALLOWED_USER_IDS")
-	}
-	if c.PIModel == "" {
-		missing = append(missing, "PI_MODEL")
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required configuration: %s", strings.Join(missing, ", "))
@@ -107,29 +104,19 @@ func (c *Config) WebhookPath() string {
 	return ""
 }
 
-// PIArgs builds the command line arguments used to start Pi in RPC mode.
+// PIArgs builds the command line arguments used to start Pi in RPC
+// mode. Provider and model flags are only included when configured;
+// otherwise Pi uses its own defaults.
 func (c *Config) PIArgs() []string {
-	return []string{
-		"--mode", "rpc",
-		"--provider", c.PIProvider,
-		"--model", c.PIModel,
-		"--session-dir", c.PISessionDirectory,
+	args := []string{"--mode", "rpc"}
+	if c.PIProvider != "" {
+		args = append(args, "--provider", c.PIProvider)
 	}
-}
-
-// ChildEnv builds the environment for the Pi child process. The OpenCode
-// Zen API key is injected here and must never be logged.
-func (c *Config) ChildEnv() []string {
-	env := os.Environ()
-	if c.OpenCodeAPIKey == "" {
-		return env
+	if c.PIModel != "" {
+		args = append(args, "--model", c.PIModel)
 	}
-	for _, kv := range env {
-		if strings.HasPrefix(kv, "OPENCODE_API_KEY=") {
-			return env // already present; inherit as-is
-		}
-	}
-	return append(env, "OPENCODE_API_KEY="+c.OpenCodeAPIKey)
+	args = append(args, "--session-dir", c.PISessionDirectory)
+	return args
 }
 
 // LoadEnvFile reads KEY=VALUE pairs from a file into the process

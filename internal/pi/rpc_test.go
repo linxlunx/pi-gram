@@ -41,7 +41,7 @@ func TestCommandSerialization(t *testing.T) {
 func TestResponseDeserialization(t *testing.T) {
 	raw := []byte(`{"id":"req-1","type":"response","command":"get_state","success":true,"data":{` +
 		`"sessionId":"abc","sessionFile":"/var/lib/pi/sessions/abc.jsonl","isStreaming":false,` +
-		`"messageCount":5,"pendingMessageCount":0,"model":{"id":"m1","provider":"opencode"}}}`)
+		`"messageCount":5,"pendingMessageCount":0,"model":{"id":"m1","provider":"prov"}}}`)
 	var resp Response
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
@@ -59,8 +59,8 @@ func TestResponseDeserialization(t *testing.T) {
 	if st.MessageCount != 5 || st.PendingMessageCount != 0 {
 		t.Fatalf("unexpected counts: %+v", st)
 	}
-	if got := st.ModelString(); got != "opencode/m1" {
-		t.Fatalf("model = %q, want opencode/m1", got)
+	if got := st.ModelString(); got != "prov/m1" {
+		t.Fatalf("model = %q, want prov/m1", got)
 	}
 }
 
