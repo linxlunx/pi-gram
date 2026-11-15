@@ -1,0 +1,54 @@
+# systemd unit for the Pi Telegram gateway.
+#
+# Install to /etc/systemd/system/pi-telegram.service, then:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now pi-telegram
+#
+# The service and the Pi agent run as the dedicated non-root user "pi".
+# NEVER run this service (or Pi) as root.
+
+[Unit]
+Description=Telegram webhook gateway for the Pi coding agent
+Documentation=file:/home/pi/pi-telegram/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=pi
+Group=pi
+
+# Protected environment file (chmod 600, owner pi).
+EnvironmentFile=/etc/pi-telegram/pi-telegram.env
+
+ExecStart=/home/pi/pi-telegram/pi-telegram
+WorkingDirectory=/home/pi
+
+# Restart the gateway if it crashes; Pi itself is supervised
+# in-process with backoff.
+Restart=on-failure
+RestartSec=5
+
+# Hardening. Pi needs write access to its session directory and its
+# working directory; everything else stays read-only.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/pi/sessions /home/pi
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+
+# Journald; structured JSON logs are written to stdout.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pi-telegram
+
+[Install]
+WantedBy=multi-user.target

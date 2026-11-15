@@ -1,0 +1,10 @@
+# Binary
+/pi-gram
+*.test
+
+# Local configuration with secrets
+.env
+.env.local
+
+# State
+*.json.tmp
