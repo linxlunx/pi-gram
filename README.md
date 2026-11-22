@@ -77,8 +77,6 @@ my-pi-gram/
 │   ├── session/              # chat <-> Pi session mapping (JSON file)
 │   ├── pi/                   # RPC protocol, client, process manager
 │   └── telegram/             # webhook, routing, formatting, sender
-├── deploy/pi-telegram.service
-├── configs/nginx.conf
 └── .env.example
 ```
 
@@ -120,7 +118,6 @@ From your development machine (or on the server):
 ```bash
 go build -o pi-telegram ./cmd/server
 scp pi-telegram server:/home/pi/pi-telegram/
-scp deploy/pi-telegram.service server:/etc/systemd/system/
 ```
 
 ### 3. Configure the environment
@@ -193,14 +190,6 @@ tells Telegram to echo it back in every webhook request's
 `X-Telegram-Bot-Api-Secret-Token` header, which the gateway then
 validates. Registration and validation read the same env file, so they
 cannot mismatch.
-
-### 5. Start the service
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now pi-telegram
-journalctl -u pi-telegram -f
-```
 
 ### Running in the foreground
 
