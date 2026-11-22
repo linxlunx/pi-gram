@@ -99,6 +99,11 @@ func run(b *bot.Bot, cfg *config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	if deleted, errs := sessions.Prune(cfg.MaxSessionFiles, cfg.PISessionDirectory, logger); len(errs) > 0 {
+		logger.Warn("session prune on startup had errors", "errors", len(errs))
+	} else if len(deleted) > 0 {
+		logger.Info("pruned old pi session files on startup", "count", len(deleted))
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

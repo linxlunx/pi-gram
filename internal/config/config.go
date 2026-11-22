@@ -34,6 +34,11 @@ type Config struct {
 	BashTimeout    time.Duration
 	CommandTimeout time.Duration
 	StateFile      string
+
+	// MaxSessionFiles caps the number of Pi session files kept on
+	// disk; the oldest non-active files (by mtime) are pruned to
+	// honour it. 0 or negative disables pruning.
+	MaxSessionFiles int
 }
 
 // Load reads configuration from the environment and validates it.
@@ -56,6 +61,8 @@ func Load() (*Config, error) {
 		PromptTimeout:  durationEnv("PI_PROMPT_TIMEOUT_SECONDS", 15*time.Minute),
 		BashTimeout:    durationEnv("PI_BASH_TIMEOUT_SECONDS", 5*time.Minute),
 		CommandTimeout: durationEnv("PI_COMMAND_TIMEOUT_SECONDS", 60*time.Second),
+
+		MaxSessionFiles: intEnv("PI_SESSION_MAX_FILES", 0),
 
 		StateFile: os.Getenv("STATE_FILE"),
 	}
@@ -212,4 +219,18 @@ func durationEnv(key string, def time.Duration) time.Duration {
 		return def
 	}
 	return time.Duration(secs) * time.Second
+}
+
+// intEnv reads a non-negative integer from the environment. Missing,
+// malformed, or negative values fall back to def.
+func intEnv(key string, def int) int {
+	s := os.Getenv(key)
+	if s == "" {
+		return def
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 0 {
+		return def
+	}
+	return n
 }

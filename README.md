@@ -162,7 +162,17 @@ credentials), just add them to the env file — no code or
 configuration changes.
 
 Optional variables and defaults are documented in `.env.example`
-(timeouts, listen address, log level, state file).
+(timeouts, listen address, log level, state file, session cap).
+
+### Session retention
+
+`PI_SESSION_MAX_FILES` (default `0` = disabled) caps the number of
+Pi session files kept in `PI_SESSION_DIRECTORY`. When set, the
+gateway prunes the oldest non-active `*.jsonl` files (by mtime)
+until the count fits — at startup, and again after each `/new`.
+The currently active session, every chat's most-recent session, and
+`pi-telegram-state.json` are never deleted. Unknown files in the
+directory (wrong extension, subdirectories) are left alone.
 
 ### 4. Register the Telegram webhook
 

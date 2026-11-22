@@ -235,6 +235,11 @@ func (h *Handler) handleNew(ctx context.Context, chatID int64) {
 		return
 	}
 	h.recordSession(ctx, chatID, client)
+	if deleted, errs := h.sessions.Prune(h.cfg.MaxSessionFiles, h.cfg.PISessionDirectory, h.logger); len(errs) > 0 {
+		h.logger.Warn("session prune after /new had errors", "errors", len(errs))
+	} else if len(deleted) > 0 {
+		h.logger.Info("pruned old pi session files after /new", "count", len(deleted))
+	}
 	h.sender.SendPlain(ctx, chatID, "🆕 New session started.")
 }
 
