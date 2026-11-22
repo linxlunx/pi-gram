@@ -116,6 +116,94 @@ func TestParseUserIDsIgnoresGarbage(t *testing.T) {
 	}
 }
 
+func TestValidateProviderRequiredEnv(t *testing.T) {
+	base := map[string]string{
+		"TELEGRAM_BOT_TOKEN":        "123:abc",
+		"TELEGRAM_WEBHOOK_SECRET":   "sekrit",
+		"TELEGRAM_WEBHOOK_URL":      "https://bot.example.com/telegram/webhook",
+		"TELEGRAM_ALLOWED_USER_IDS": "111",
+		// Make sure leftover keys from the wider env cannot leak in.
+		"PI_PROVIDER":     "",
+		"OPENCODE_API_KEY": "",
+	}
+	t.Run("opencode with key passes", func(t *testing.T) {
+		setenv(t, base)
+		t.Setenv("PI_PROVIDER", "opencode")
+		t.Setenv("OPENCODE_API_KEY", "sk-test")
+		if _, err := Load(); err != nil {
+			t.Fatalf("unexpected: %v", err)
+		}
+	})
+	t.Run("opencode missing key fails", func(t *testing.T) {
+		setenv(t, base)
+		t.Setenv("PI_PROVIDER", "opencode")
+		t.Setenv("OPENCODE_API_KEY", "")
+		_, err := Load()
+		if err == nil {
+			t.Fatal("expected validation error")
+		}
+		if !contains(err.Error(), "OPENCODE_API_KEY") {
+			t.Errorf("error should mention OPENCODE_API_KEY: %v", err)
+		}
+	})
+	t.Run("provider name is case insensitive", func(t *testing.T) {
+		setenv(t, base)
+		t.Setenv("PI_PROVIDER", "OpenCode")
+		t.Setenv("OPENCODE_API_KEY", "")
+		if _, err := Load(); err == nil {
+			t.Fatal("expected validation error")
+		}
+	})
+	t.Run("provider whitespace is trimmed", func(t *testing.T) {
+		setenv(t, base)
+		t.Setenv("PI_PROVIDER", "  opencode\n")
+		t.Setenv("OPENCODE_API_KEY", "")
+		if _, err := Load(); err == nil {
+			t.Fatal("expected validation error")
+		}
+	})
+	t.Run("unset provider does not require any key", func(t *testing.T) {
+		setenv(t, base)
+		t.Setenv("PI_PROVIDER", "")
+		t.Setenv("OPENCODE_API_KEY", "")
+		if _, err := Load(); err != nil {
+			t.Fatalf("unexpected: %v", err)
+		}
+	})
+	t.Run("unknown provider is not enforced", func(t *testing.T) {
+		setenv(t, base)
+		t.Setenv("PI_PROVIDER", "anthropic")
+		t.Setenv("OPENCODE_API_KEY", "")
+		if _, err := Load(); err != nil {
+			t.Fatalf("unexpected: %v", err)
+		}
+	})
+	t.Run("telegram missing still reported alongside provider missing", func(t *testing.T) {
+		// No telegram vars: provider-key check must also be reported.
+		t.Setenv("TELEGRAM_BOT_TOKEN", "")
+		t.Setenv("TELEGRAM_WEBHOOK_SECRET", "")
+		t.Setenv("TELEGRAM_WEBHOOK_URL", "")
+		t.Setenv("TELEGRAM_ALLOWED_USER_IDS", "")
+		t.Setenv("PI_PROVIDER", "opencode")
+		t.Setenv("OPENCODE_API_KEY", "")
+		_, err := Load()
+		if err == nil {
+			t.Fatal("expected validation error")
+		}
+		for _, key := range []string{
+			"TELEGRAM_BOT_TOKEN",
+			"TELEGRAM_WEBHOOK_SECRET",
+			"TELEGRAM_WEBHOOK_URL",
+			"TELEGRAM_ALLOWED_USER_IDS",
+			"OPENCODE_API_KEY",
+		} {
+			if !contains(err.Error(), key) {
+				t.Errorf("error should mention %s: %v", key, err)
+			}
+		}
+	})
+}
+
 func TestLoadEnvFile(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/test.env"

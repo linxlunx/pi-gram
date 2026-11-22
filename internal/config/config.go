@@ -71,6 +71,13 @@ func Load() (*Config, error) {
 // Validate checks that required configuration values are present.
 // Provider and model are deliberately not validated: they are passed
 // through to Pi, which is authoritative for its own defaults.
+//
+// The one exception is provider-specific credentials: when the
+// operator explicitly selects a provider the gateway knows about, the
+// matching API key is required to be set in the environment. The
+// gateway does not read these values — it only fails fast if they are
+// missing, so a misconfiguration is reported before the webhook goes
+// live instead of discovered via Pi's startup crash loop later.
 func (c *Config) Validate() error {
 	var missing []string
 	if c.TelegramBotToken == "" {
@@ -85,10 +92,29 @@ func (c *Config) Validate() error {
 	if len(c.TelegramAllowedUserIDs) == 0 {
 		missing = append(missing, "TELEGRAM_ALLOWED_USER_IDS")
 	}
+	for _, key := range providerRequiredEnv[providerKey(c.PIProvider)] {
+		if os.Getenv(key) == "" {
+			missing = append(missing, key)
+		}
+	}
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required configuration: %s", strings.Join(missing, ", "))
 	}
 	return nil
+}
+
+// providerRequiredEnv lists env vars each declared Pi provider
+// requires. Keys are normalised via providerKey (case-insensitive,
+// trimmed). Add a new provider by appending one line — the gateway
+// does not read these values, it only enforces that they are present.
+var providerRequiredEnv = map[string][]string{
+	"opencode": {"OPENCODE_API_KEY"},
+}
+
+// providerKey normalises a PI_PROVIDER value for lookup in
+// providerRequiredEnv.
+func providerKey(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
 }
 
 // WebhookPath returns the URL path the webhook should be served on,

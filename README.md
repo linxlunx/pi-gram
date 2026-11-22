@@ -140,14 +140,26 @@ Required values:
 
 Find your numeric user ID by messaging [@userinfobot](https://t.me/userinfobot).
 
+**Provider-conditional requirements.**
+The gateway checks presence (never value) for credentials of providers
+it knows about. Right now there is one entry:
+
+| `PI_PROVIDER` value | Required env var |
+|---|---|
+| `opencode` (any case, whitespace ignored) | `OPENCODE_API_KEY` |
+
+Leave `PI_PROVIDER` unset and no provider credential is enforced —
+Pi's own default is authoritative and unvalidated. Unknown providers
+(e.g. anything not in the table above) are passed through unchanged.
+
 **Pi settings are passthrough, not gateway configuration.**
-`PI_PROVIDER`, `PI_MODEL`, provider API keys and anything else in the
-env file flow straight through to the Pi child process unchanged — the
-gateway never reads provider credentials. When `PI_PROVIDER`/`PI_MODEL`
-are unset, the corresponding `--provider`/`--model` flags are omitted
-and Pi uses its own defaults. To give Pi additional variables later
-(proxy settings, other credentials), just add them to the env file —
-no code or configuration changes.
+`PI_PROVIDER`, `PI_MODEL`, and provider API keys flow straight through
+to the Pi child process unchanged — the gateway never reads their
+values. When `PI_PROVIDER`/`PI_MODEL` are unset, the corresponding
+`--provider`/`--model` flags are omitted and Pi uses its own defaults.
+To give Pi additional variables later (proxy settings, other
+credentials), just add them to the env file — no code or
+configuration changes.
 
 Optional variables and defaults are documented in `.env.example`
 (timeouts, listen address, log level, state file).
